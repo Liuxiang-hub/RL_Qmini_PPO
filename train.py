@@ -224,10 +224,12 @@ def train():
     # ========== 3. 配置训练参数 ==========
     num_steps_per_env = cfg.runner.num_steps_per_env  # 每次策略更新前收集的步数
     num_learning_iterations = cfg.runner.max_iterations  # 总训练迭代次数
-    set_seed(seed=None)  # 设置随机种子(确保可复现性)
+    # Honour --seed (propagated into cfg.runner by update_cfg_from_args) so
+    # baseline and ablation runs are reproducible and directly comparable.
+    set_seed(seed=cfg.runner.seed)
     
     # 解析IsaacGym物理仿真参数
-    sim_params = parse_sim_params(args)
+    sim_params = parse_sim_params(args, class_to_dict(cfg.sim))
     # ========== 4. 创建仿真环境 ==========
     # LeggedRobotEnv: 基于IsaacGym的腿式机器人仿真环境
     env = LeggedRobotEnv(

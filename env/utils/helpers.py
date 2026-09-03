@@ -75,7 +75,7 @@ def update_cfg_from_args(cfg, args):
     if args.num_envs is not None:
         cfg.runner.num_envs = args.num_envs
     if args.seed is not None:
-        cfg.seed = args.seed
+        cfg.runner.seed = args.seed
     # alg runner parameters
     if args.max_iterations is not None:
         cfg.runner.max_iterations = args.max_iterations

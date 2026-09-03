@@ -286,6 +286,13 @@ class BIRLTask(BaseTask):
         self.base_acc[env_ids] = self.env.base_acc_his.delay(self.delay_joint_steps)[env_ids]
         self.joint_vel[env_ids] = self.env.joint_vel_his.delay(self.delay_joint_steps)[env_ids]
         self.joint_pos[env_ids] = self.env.joint_pos_his.delay(self.delay_joint_steps)[env_ids]
+        self.base_ang_vel[env_ids] = self.env.base_ang_vel_his.delay(
+            self.delay_rate_steps
+        )[env_ids]
+        self.base_euler[env_ids] = self.env.base_eul_his.delay(
+            self.delay_angle_steps
+        )[env_ids]
+        self.base_lin_vel[env_ids] = self.env.base_lin_vel[env_ids]
         
         # 重置关节动作
         self.current_joint_act[env_ids] = self.env.default_dof_pos
@@ -315,6 +322,24 @@ class BIRLTask(BaseTask):
         self.foot_support_mask = torch.logical_and(foot_support_mask_1, foot_support_mask_2)
         self.foot_swing_mask = torch.logical_not(self.foot_support_mask)
         self.pm_f = self.phase_modulator.frequency.clone()
+
+        # A terminal observation may already contain NaN/Inf. Replace every
+        # history frame for reset environments so stale terminal values cannot
+        # leak into the next policy input.
+        # The simulator state has already been reset, but derived rigid-body
+        # tensors are refreshed on the next physics step. A failed PhysX actor
+        # can therefore still expose NaN/Inf here for one frame. Use a neutral
+        # finite reset frame; the next step replaces it with measured state.
+        fresh_obs = torch.nan_to_num(
+            self.pure_observation(), nan=0.0, posinf=3.0, neginf=-3.0
+        )
+        for history_frame in self.obs_history:
+            history_frame[env_ids] = fresh_obs[env_ids]
+        fresh_cri_obs = torch.nan_to_num(
+            self.pure_critic_observation(), nan=0.0, posinf=10.0, neginf=-10.0
+        ).clip(min=-10.0, max=10.0)
+        for history_frame in self.cri_obs_history:
+            history_frame[env_ids] = fresh_cri_obs[env_ids]
 
 
     def step(self):
@@ -443,7 +468,9 @@ class BIRLTask(BaseTask):
             self.joint_vel * 0.1,                                 # 关节速度
             self.joint_pos_error,                                  # 关节位置误差
         ], dim=1)
-        return obs_buf
+        # Bound rare but finite PhysX spikes before they overflow the value
+        # network. Nominal scaled critic features remain well inside this range.
+        return obs_buf.clip(min=-10.0, max=10.0)
 
     def pure_observation(self):
         """ 构建纯Actor观察向量(不包含历史)
@@ -519,12 +546,56 @@ class BIRLTask(BaseTask):
         yaw_rate_norm = torch.clip(torch.abs(self.commands[:, [2]]), min=0.3, max=1.5) + 0.2  # yaw速率归一化
         
         # ========== 平衡相关奖励 ==========
-        # 基座高度奖励: 鼓励保持约0.45m的高度 
-        # R=e的−70(h−0.45)的平方
-        base_heit_rew = torch.exp(-70 * (self.env.base_pos[:, [2]] - 0.45) ** 2)
-        
-        # 平衡奖励: 综合高度和倾斜角度
-        balance_rew = 0.5 * (base_heit_rew * torch.exp(-torch.clip(5. / lin_vel_x_norm, min=2, max=8.) * torch.norm(self.env.base_euler[:, :2], dim=-1, keepdim=True)) + 1.)
+        # 基座高度奖励: 鼓励保持目标高度
+        posture_cfg = self.cfg.posture_reward
+        height_error = self.env.base_pos[:, [2]] - posture_cfg.target_height
+        base_heit_rew = torch.exp(-posture_cfg.height_gain * height_error ** 2)
+
+        # 姿态约束提供三种可复现实验模式，便于论文消融对比。
+        posture_mode = posture_cfg.mode
+        if posture_mode in ('baseline', 'dynamic_reference'):
+            posture_reference = torch.zeros_like(self.env.base_euler[:, :2])
+            if posture_mode == 'dynamic_reference':
+                posture_reference[:, [0]] = torch.clamp(
+                    -posture_cfg.lateral_velocity_gain * self.env.base_lin_vel[:, [1]]
+                    -posture_cfg.roll_rate_gain * self.env.base_ang_vel[:, [0]],
+                    min=-posture_cfg.max_roll_reference,
+                    max=posture_cfg.max_roll_reference,
+                )
+                forward_velocity_error = (
+                    self.env.base_lin_vel[:, [0]] - self.commands[:, [0]]
+                )
+                posture_reference[:, [1]] = torch.clamp(
+                    -posture_cfg.forward_velocity_error_gain * forward_velocity_error
+                    -posture_cfg.pitch_rate_gain * self.env.base_ang_vel[:, [1]],
+                    min=-posture_cfg.max_pitch_reference,
+                    max=posture_cfg.max_pitch_reference,
+                )
+
+            # 原始 RoboTamer 公式：保留 +1 带来的 0.5 奖励地板。
+            balance_rew = 0.5 * (
+                base_heit_rew * torch.exp(
+                    -torch.clip(5. / lin_vel_x_norm, min=2., max=8.)
+                    * torch.norm(
+                        self.env.base_euler[:, :2] - posture_reference,
+                        dim=-1,
+                        keepdim=True,
+                    )
+                ) + 1.
+            )
+        elif posture_mode in ('angle_only', 'posture_rate'):
+            posture_cost = posture_cfg.angle_gain * torch.sum(
+                self.env.base_euler[:, :2] ** 2, dim=1, keepdim=True
+            )
+            if posture_mode == 'posture_rate':
+                posture_cost += posture_cfg.rate_gain * torch.sum(
+                    self.env.base_ang_vel[:, :2] ** 2, dim=1, keepdim=True
+                )
+
+            # 无奖励地板：高度、姿态或角速度误差过大时奖励可趋近于 0。
+            balance_rew = base_heit_rew * torch.exp(-posture_cost)
+        else:
+            raise ValueError('Unknown posture reward mode: {}'.format(posture_mode))
 
         # ========== 速度跟踪奖励 ==========
         # 前向速度跟踪: 鼓励跟踪期望前向速度

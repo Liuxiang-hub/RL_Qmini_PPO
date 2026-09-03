@@ -113,8 +113,8 @@ class GymEnvWrapper:
         self.env.step_states()
         
         # 获取初始观察
-        obs = self.task.observation()
-        cri_obs = self.task.critic_observation()
+        obs = torch.cat(list(self.task.obs_history), dim=-1)
+        cri_obs = torch.cat(list(self.task.cri_obs_history), dim=-1)
         
         # 清空调试数据（如果启用）
         if self.debug:
@@ -126,6 +126,14 @@ class GymEnvWrapper:
         if self.residual_task is not None:
             self.residual_task.reset(env_ids)
         
+        # The observations collected above describe the state before reset.
+        # Never feed those terminal/stale values to the policy. Rebuild both
+        # observations after env/task reset so the caller receives fresh state.
+        obs = self.task.observation()
+        cri_obs = self.task.critic_observation()
+        if not torch.isfinite(obs[env_ids]).all() or not torch.isfinite(cri_obs[env_ids]).all():
+            raise FloatingPointError("Non-finite observation immediately after environment reset")
+
         return obs, cri_obs
 
     def step(self, net_out, it=None):
@@ -184,6 +192,33 @@ class GymEnvWrapper:
         rew, eval_rew = self.task.reward()       # 奖励（训练用 + 评估用）
         done = self.task.terminate()             # 终止标志
         info = self.task.info()                  # 额外信息
+
+        # Isaac Gym can occasionally produce NaN/Inf for a single simulated
+        # robot before the ordinary fall conditions become true (comparisons
+        # with NaN are false). Mark it terminal so the reset path below cleans
+        # its state and history before the observation reaches PPO.
+        invalid_env = (
+            ~torch.isfinite(obs).reshape(self.env.num_envs, -1).all(dim=1)
+            | ~torch.isfinite(cri_obs).reshape(self.env.num_envs, -1).all(dim=1)
+            | ~torch.isfinite(rew).reshape(self.env.num_envs, -1).all(dim=1)
+            | ~torch.isfinite(eval_rew).reshape(
+                self.env.num_envs, -1
+            ).all(dim=1)
+        )
+        if invalid_env.any():
+            invalid_ids = invalid_env.nonzero(as_tuple=False).flatten()
+            done[invalid_ids] = 1
+            rew[invalid_ids] = 0.0
+            eval_rew[invalid_ids] = 0.0
+            if isinstance(info, dict) and 'timeouts' in info:
+                info['timeouts'][invalid_ids] = False
+            self.nonfinite_reset_count = getattr(
+                self, 'nonfinite_reset_count', 0
+            ) + invalid_ids.numel()
+            print(
+                f"[nonfinite-guard] reset {invalid_ids.numel()} env(s); "
+                f"total={self.nonfinite_reset_count}"
+            )
         
         # ⭐ 关键步骤：将奖励数组按行求和，裁剪到非负
         # rew 形状: (num_envs, num_rew_items)
@@ -199,7 +234,22 @@ class GymEnvWrapper:
         if len(reset_env_ids) > 0:
             self.env.reset(reset_env_ids)
             self.task.reset(reset_env_ids)
-        
+            if self.residual_task is not None:
+                self.residual_task.reset(reset_env_ids)
+
+            # `obs` and `cri_obs` above belong to the terminal state. Replace
+            # only reset rows with observations of the freshly reset state.
+            reset_obs = torch.cat(list(self.task.obs_history), dim=-1)
+            reset_cri_obs = torch.cat(list(self.task.cri_obs_history), dim=-1)
+            obs[reset_env_ids] = reset_obs[reset_env_ids]
+            cri_obs[reset_env_ids] = reset_cri_obs[reset_env_ids]
+
+            if (not torch.isfinite(obs[reset_env_ids]).all()
+                    or not torch.isfinite(cri_obs[reset_env_ids]).all()):
+                raise FloatingPointError(
+                    "Non-finite observation immediately after terminal reset"
+                )
+
         return obs, cri_obs, rew_buf, done, info, eval_rew
 
 
