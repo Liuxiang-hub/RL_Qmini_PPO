@@ -34,9 +34,12 @@
 
 第一次部署官方训练的策略，机器人跌跌撞撞、边调整边摸索中……
 
-![部署记录 1](assets/gifs/deploy1.gif)
-
-![部署记录 2](assets/gifs/deploy2.gif)
+<table>
+  <tr>
+    <td align="center"><img src="assets/gifs/deploy1.gif" width="200" /></td>
+    <td align="center"><img src="assets/gifs/deploy2.gif" width="200" /></td>
+  </tr>
+</table>
 
 ## 代码结构
 
