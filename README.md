@@ -90,12 +90,12 @@ ac50da103e32e71122209fbfcbd22b907af246c4f042dca004e3b0459ebc6bbe
 下图和视频记录的是完成自动 PD 辨识、模型对齐、重新训练和 ONNX 部署后的最终效果。机器人能够在真机上稳定行走、转向并保持动态平衡。
 
 <p align="center">
-  <a href="docs/videos/qmini-final-real-robot.mp4">
+  <a href="docs/videos/qmini-final-real-robot.mp4?raw=1">
     <img src="docs/images/qmini-final-robot.jpg" width="520" alt="Qmini 最终真机效果，点击播放视频" />
   </a>
 </p>
 
-<p align="center"><strong>点击上图播放最终真机视频，或直接打开 <a href="docs/videos/qmini-final-real-robot.mp4">MP4 文件</a>。</strong></p>
+<p align="center"><strong>点击上图播放最终真机视频，或直接打开 <a href="docs/videos/qmini-final-real-robot.mp4?raw=1">MP4 文件</a>。</strong></p>
 
 <table>
   <tr>
