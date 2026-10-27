@@ -85,14 +85,37 @@ ac50da103e32e71122209fbfcbd22b907af246c4f042dca004e3b0459ebc6bbe
 - 真机已实现稳定行走、转向、平衡恢复和一定抗干扰能力；
 - 高摩擦地面效果较好，光滑地面会发生足端打滑，后续可通过更换足端材料改善。
 
-#### 真机部署视频
+#### 最终真机效果
 
-下面保留仓库原有的两段真机部署 GIF，记录策略上机后的运动效果：
+下图和视频记录的是完成自动 PD 辨识、模型对齐、重新训练和 ONNX 部署后的最终效果。机器人能够在真机上稳定行走、转向并保持动态平衡。
+
+<p align="center">
+  <a href="docs/videos/qmini-final-real-robot.mp4">
+    <img src="docs/images/qmini-final-robot.jpg" width="520" alt="Qmini 最终真机效果，点击播放视频" />
+  </a>
+</p>
+
+<p align="center"><strong>点击上图播放最终真机视频，或直接打开 <a href="docs/videos/qmini-final-real-robot.mp4">MP4 文件</a>。</strong></p>
 
 <table>
   <tr>
-    <td align="center"><img src="assets/gifs/deploy1.gif" width="320" alt="Qmini 真机部署视频 1" /></td>
-    <td align="center"><img src="assets/gifs/deploy2.gif" width="320" alt="Qmini 真机部署视频 2" /></td>
+    <td align="center"><img src="docs/images/qmini-final-robot.jpg" width="300" alt="Qmini 最终实物" /></td>
+    <td align="center"><img src="docs/images/qmini-final-mobile-control.jpg" width="300" alt="Qmini 手机控制端最终效果" /></td>
+  </tr>
+  <tr>
+    <td align="center">最终真机平台</td>
+    <td align="center">手机桌面入口与网页控制台</td>
+  </tr>
+</table>
+
+#### 历史对照：官方策略初次部署
+
+下面两段 GIF 是项目早期直接部署官方策略时的初步尝试，仅作为改进前的历史对照，**不是本文最终模型的效果**：
+
+<table>
+  <tr>
+    <td align="center"><img src="assets/gifs/deploy1.gif" width="280" alt="官方策略初次部署记录 1" /></td>
+    <td align="center"><img src="assets/gifs/deploy2.gif" width="280" alt="官方策略初次部署记录 2" /></td>
   </tr>
 </table>
 
