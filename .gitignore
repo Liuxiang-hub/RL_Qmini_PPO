@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.idea/
+.DS_Store
+
+# Local environments and caches
+.venv/
+envs/
+torch-extensions/
+
+# Generated evaluation media
+experiments/*/debug/picture/
+experiments/*/debug/cropped/

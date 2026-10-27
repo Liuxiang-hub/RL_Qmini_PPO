@@ -1,151 +1,190 @@
-# 双足机器人强化学习平衡控制
+# Qmini 自动系统辨识与强化学习运动控制
 
-> 本科毕业论文项目 · 基于 RoboTamer4Qmini
+> 面向 Qmini 双足机器人的自动 PD 参数辨识、Isaac Gym/PPO 训练、ONNX 真机部署与手机网页控制系统
 
-![Python Version](https://img.shields.io/badge/python-3.8%2B-green.svg)
-[![Powered by Isaac Gym](https://img.shields.io/badge/Powered%20by-Isaac%20Gym-blue.svg)](https://developer.nvidia.com/isaac-gym)
-[![Algorithm](https://img.shields.io/badge/Algorithm-PPO-green.svg)](https://arxiv.org/abs/1707.06347)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+![Python](https://img.shields.io/badge/Python-3.8-green.svg)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.0.0-ee4c2c.svg)
+![Isaac Gym](https://img.shields.io/badge/Isaac%20Gym-Preview%204-76b900.svg)
+![Algorithm](https://img.shields.io/badge/Algorithm-PPO-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)
 
 ## 项目简介
 
-本项目是我的本科毕业论文《基于动态姿态约束奖励优化的双足机器人强化学习平衡控制研究》的代码实现。
+本项目基于 [vsislab/RoboTamer4Qmini](https://github.com/vsislab/RoboTamer4Qmini) 开展，目标不是只在仿真中训练一个能走路的策略，而是建立一条可验证的完整 Sim2Real 流程：
 
-项目以 **Unitree Qmini 双足机器人**为对象，基于 **NVIDIA Isaac Gym** 与 **PPO** 深度强化学习，在官方 **RoboTamer4Qmini** 策略基础上进行改进：引入"随运动状态变化的参考姿态"（动态参考姿态奖励），使平衡奖励不再机械地要求躯干始终竖直，而是根据运动状态动态生成目标姿态，从而提升机器人的平衡能力与抗扰动能力，并通过仿真与真机推扰实验进行验证。
+1. 在真机上采集 10 个关节的目标角、实际角度和速度响应；
+2. 在 Isaac Gym GPU PhysX 中并行搜索等效 `Kp`、`Kd` 和控制延迟；
+3. 对齐 URDF、关节顺序、正负方向、限位、参考站姿和 IMU 坐标系；
+4. 使用 PPO 从零训练运动策略，并进行确定性回放与随机化测试；
+5. 导出 ONNX，在树莓派 C++ ONNX Runtime 上完成静态验证和真机部署；
+6. 使用 PS4 手柄或手机横屏网页控制机器人，并通过安全状态机处理准备、站立、运动和急停。
 
-## 核心工作
+论文工作的重点创新是：**用自动系统辨识替代依赖经验的人工 PD 调参，在减少人工时间的同时提高真机响应拟合精度。**
 
-- **动态参考姿态奖励**：将平衡奖励中固定的参考姿态（`roll_ref = 0`、`pitch_ref = 0`）改为随运动状态动态生成：
-  - `roll_ref = f(横向速度, 横滚角速度)`
-  - `pitch_ref = f(前向速度误差, 俯仰角速度)`
+## 主要改进
 
-  向前加速时允许适当俯身，横向运动或受到侧向扰动时允许适当侧倾，扰动结束后参考姿态逐渐回归中性。
-- **训练稳定性保护**：修复随机种子传递、终止后旧观测泄漏、重置时观测历史清理、单环境 NaN/Inf 检测与隔离、Critic 输入限幅等问题。
-- **仿真与真机实验**：统一"1.0 m/s 推扰、10 秒、第 4 秒推扰"的测试配置，设置 A0（官方基线）、A′（公平续训基线）、B（动态参考姿态）三组对照，统计存活时间、姿态 RMSE、最大倾角、恢复时间等指标。
+### 1. 自动 PD 参数辨识
 
-## 后续计划
+- 以 `0.5 Hz` 和 `1.5 Hz` 真机响应作为拟合集；
+- 将 `1.0 Hz` 完全留作最终验证，避免在留出集上调参；
+- 在固定基座 Isaac Gym GPU PhysX 中并行评估候选参数；
+- 先粗搜索，再在最优区域细搜索；
+- 同时辨识 `Kp`、`Kd` 和额外控制延迟；
+- 保存输入文件、URDF 和结果文件的 SHA256，保证实验可追溯。
 
-- [ ] 优化奖励函数
-- [ ] 新增"自己起身"强化学习任务
-- [ ] 新增"踢球"强化学习任务
-- [ ] 增加更多强化学习任务
+公平对比采用相同真机数据、相同 URDF、相同 `15 ms` 控制周期和相同三参数模型：
 
-## 真机部署记录
+| 方法 | 10 关节平均 1 Hz RMSE | 结果 |
+|---|---:|---:|
+| 人工调参 | 0.006521 rad | 基线 |
+| 自动辨识 | 0.003683 rad | 误差降低 **43.52%** |
 
-第一次部署官方训练的策略，机器人跌跌撞撞、边调整边摸索中……
+自动方法在 10 个关节上均取得更低的留出集误差。人工实验共进行了 72 次候选尝试，主动操作时间约 2.46 小时；自动流程将主要工作转化为可重复的 GPU 搜索。
 
-<table>
-  <tr>
-    <td align="center"><img src="assets/gifs/deploy1.gif" width="200" /></td>
-    <td align="center"><img src="assets/gifs/deploy2.gif" width="200" /></td>
-  </tr>
-</table>
+![人工调参与自动辨识在 1 Hz 留出集上的对比](docs/images/manual-vs-automatic-1hz.png)
+
+原始汇总结果：[`heldout-comparison.csv`](docs/results/heldout-comparison.csv) · [`heldout-comparison.json`](docs/results/heldout-comparison.json)
+
+> 注意：曾得到的“70.82%”是电机侧物理约束模型相对官方默认模型的提升，不是自动方法相对人工调参的提升。人工与自动的公平三参数对比结论是 **43.52%**。
+
+### 2. 仿真模型与真机接口对齐
+
+- 修正髋关节 `origin rpy`，解决仿真站姿髋部外翻而真机正常的问题；
+- 校验 10 个关节的顺序、左右映射、符号和限位；
+- 使用真机确认的参考站姿，而不是直接沿用官方默认站姿；
+- 修正 PD 力矩计算中阻尼项的乘法关系；
+- 去除 H30 IMU 链路中的重复坐标变换；
+- 通过平放、前倾和左倾实验验证 IMU 数值、刷新率和轴向；
+- 将观测延迟随机化扩展为 `1–50 ms`，覆盖实测链路和更大延迟扰动。
+
+髋关节对齐只修改关节坐标系的零位变换，没有修改 `axis`、质量、惯量和网格模型。正式文件为 `assets/q1/urdf/q1_hip_aligned.urdf`，SHA256 为：
+
+```text
+ac50da103e32e71122209fbfcbd22b907af246c4f042dca004e3b0459ebc6bbe
+```
+
+### 3. PPO 训练与验证
+
+正式实验使用：
+
+| 项目 | 设置 |
+|---|---|
+| GPU | NVIDIA RTX 4090 |
+| 并行环境 | 20480 |
+| 训练迭代 | 5000 |
+| 随机种子 | 20260927 |
+| 配置 | `BIRLPhysicalPD` |
+| 训练方式 | 随机权重从零开始；中断后从完整 checkpoint 恢复 |
+
+训练后完成站立、直行、转向和随机指令回放。随机指令每段保持 20 秒，并启用摩擦、质量、增益、扭矩、噪声和延迟随机化。15 秒前进回放累计路程约 3.95 m，机器人在修正后的模型中保持稳定步态。
+
+### 4. ONNX 与真机部署
+
+- 导出策略接口：输入 `1 × 129`，输出 `1 × 12`；
+- 在树莓派 C++ ONNX Runtime 中完成 1000 次静态推理验证；
+- 真机已实现稳定行走、转向、平衡恢复和一定抗干扰能力；
+- 高摩擦地面效果较好，光滑地面会发生足端打滑，后续可通过更换足端材料改善。
+
+### 5. 手机网页控制 APP
+
+网页控制器面向手机横屏使用：左摇杆控制前后/横移，右摇杆控制转向；“准备、站立、运动”按钮与手柄状态机保持一致，并显示运行模式、控制源、IMU、电机通信和指令延迟。
+
+![Qmini 手机网页控制台](docs/images/qmini-web-controller.png)
+
+控制侧增加了：
+
+- PS4 手柄和网页双控制源仲裁；
+- 网页 sequence 与心跳看门狗；
+- 每 `15 ms` 周期记录模式、控制源、网页/手柄指令、IMU 和看门狗年龄；
+- 开机和异常状态下的高阻尼保护；
+- 急停后回到安全状态，避免电机突然失去阻尼。
+
+网页服务运行在机器人树莓派上，手机与机器人处于同一热点后即可使用浏览器访问；具体部署代码位于真机 SDK 工程。
+
+## 系统流程
+
+```mermaid
+flowchart LR
+    A[真机关节扫频数据] --> B[清洗与频率分组]
+    B --> C[GPU 并行搜索 Kp/Kd/延迟]
+    C --> D[1 Hz 留出集验证]
+    D --> E[更新物理参数与随机化范围]
+    E --> F[Isaac Gym + PPO 训练]
+    F --> G[确定性/随机化回放]
+    G --> H[导出 ONNX]
+    H --> I[树莓派 C++ 静态验证]
+    I --> J[手柄或网页真机控制]
+```
+
+## 快速开始
+
+### 1. 环境
+
+已经验证的组合：Python 3.8、PyTorch `2.0.0+cu117`、NumPy `1.23.5`、Isaac Gym Preview 4（`isaacgym==1.0rc4`）。Isaac Gym 需从 NVIDIA 官方渠道单独获取。
+
+```bash
+conda create -n isaac python=3.8
+conda activate isaac
+pip install torch==2.0.0 torchvision==0.15.1 torchaudio==2.0.0
+cd /path/to/isaacgym/python && pip install -e .
+cd /path/to/RL_Qmini_PPO
+pip install -r requirements.txt
+```
+
+运行前确保 Ninja 和扩展缓存路径可用：
+
+```bash
+export PATH=/path/to/env/bin:$PATH
+export TORCH_EXTENSIONS_DIR=/path/to/torch-extensions
+```
+
+### 2. 训练
+
+```bash
+python train.py \
+  --config BIRLPhysicalPD \
+  --name qmini_h30_pd_hip_aligned_seed20260927 \
+  --num_envs 20480 \
+  --max_iterations 5000 \
+  --seed 20260927
+```
+
+显存不足时先降低 `--num_envs`，不要并行启动第二个训练进程。
+
+### 3. 回放与导出
+
+```bash
+python play.py --name qmini_h30_pd_hip_aligned_seed20260927 --num_envs 1 --time 20 --render
+python export_pt2onnx.py --name qmini_h30_pd_hip_aligned_seed20260927
+```
+
+更完整的自动辨识、人工对比、训练恢复、ONNX 验证和真机门禁步骤见：
+
+**[中文完整复现流程](docs/REPRODUCTION_CN.md)**
 
 ## 代码结构
 
-   ```
-RoboTamer4Qmini/
-   ├── assets/                 # 机器人的 URDF 模型
-   ├── config/                 # 配置文件（含 BIRL 系列姿态奖励配置）
-   ├── env/                    # 仿真环境与任务
-   ├── experiments/            # 训练模型与评测结果
-   ├── model/                  # 神经网络结构
-   ├── utils/                  # 工具函数
-   ├── train.py                # 训练模型
-   ├── play.py                 # 评测预训练模型
-   ├── export_pt2onnx.py       # 导出 *.pt 为 *.onnx
-   ├── evaluate_baseline.py    # 推扰等基准测试
-   ├── summarize_evaluation.py # 汇总评测结果
-   ├── tune_pid.py             # 优化 PID 参数（缩小仿真与真机差异）
-   ├── tune_urdf.py            # 加载并查看 URDF
-   ├── requirements.txt        # 依赖
-   └── README.md
-   ```
-
-### 注意事项
-
-* 在 `play.py`、`train.py`、`Base.py`、`tune_urdf.py`、`tune_pid.py` 中存在一些硬编码路径，请按自己的环境修改。
-* 项目需安装成功后才能运行。
-
-## 安装
-
-### 环境要求
-
-- Ubuntu 18.04 或 20.04
-- NVIDIA 驱动 470+
-- NVIDIA Pascal 或更新的 GPU，显存至少 8 GB
-- CUDA 11.4+
-- Python 3.8+
-- PyTorch 2.0.0+
-- Isaac Gym 1.0rc3+
-- 其他依赖见 `requirements.txt`
-
-### 步骤
-
-1. 创建 conda 环境：
-
-```bash
-$ conda create -n isaac python==3.8 && conda activate isaac
+```text
+RL_Qmini_PPO/
+├── assets/                  # Qmini URDF 与网格
+├── config/                  # 训练、奖励、PD 和随机化配置
+├── env/                     # Isaac Gym 环境与任务
+├── model/                   # Actor/Critic 网络
+├── rl/                      # PPO 算法与存储
+├── experiments/             # 示例 checkpoint 与历史实验
+├── docs/                    # 复现说明、图片和汇总结果
+├── train.py                 # PPO 训练
+├── play.py                  # 策略回放
+├── export_pt2onnx.py        # ONNX 导出与 Python 侧一致性检查
+├── tune_pid.py              # 官方人工 PD 调试入口
+├── evaluate_baseline.py     # 基准评估
+└── summarize_evaluation.py  # 评估汇总
 ```
 
-2. 安装依赖：
+## 安全说明
 
-```bash
-pip3 install torch==2.0.0 torchvision==0.15.1 torchaudio==2.0.0
-tar -zxvf IsaacGym_Preview_3_Package.tar.gz && cd ./isaacgym/python && pip install -e .
-pip3 install -r requirements.txt
-pip3 install matplotlib pandas tensorboard opencv-python numpy==1.23.5 openpyxl onnxruntime onnx
-```
+真机测试前必须吊起或可靠支撑机器人，核对关节映射、零位、限位、IMU 轴向、策略哈希和急停。静态 ONNX 推理通过只说明模型格式与接口可用，不等于可以无保护直接上电运动。
 
-## 使用说明
+## 致谢与许可
 
-### 训练
-
-```bash
-$ python train.py --config BIRL --name <name>
-```
-
-常用参数：
-
-  - `--config <str>`：配置文件（`BIRL` 官方奖励、`BIRLBaseline` 静态姿态、`BIRLDynamicReference` 动态参考姿态等）
-  - `--name <str>`：实验名称
-  - `--resume <str>`：从检查点恢复训练
-  - `--num_envs <int>`：并行环境数
-  - `--seed <int>`：随机种子
-  - `--max_iterations <int>`：最大迭代次数
-  - `--rl_device <str>`：RL 设备（默认 `cuda:0`）
-
-### 可视化日志
-
-```bash
-$ tensorboard --logdir experiments/
-```
-
-### 评测
-
-```bash
-$ python play.py --render --name <name>
-```
-
-  - `--time <float>`：评测时长（秒）
-  - `--video`：录制视频
-  - `--debug`：保存数据到 Excel
-  - `--cmp_real`：与真机数据对比绘图
-
-### 导出 ONNX
-
-```bash
-$ python export_pt2onnx.py --name <name>
-```
-
-### 其他工具
-
-```bash
-$ python tune_urdf.py          # 加载并查看 URDF
-$ python tune_pid.py           # 优化 PID 参数
-$ python evaluate_baseline.py  # 推扰等基准测试
-```
-
-## 许可证
-
-本项目基于 MIT 协议开源的 RoboTamer4Qmini 开发，同样采用 MIT 许可证。
+本项目基于 [RoboTamer4Qmini](https://github.com/vsislab/RoboTamer4Qmini) 开展，采用 MIT License。感谢原项目作者提供训练与部署基础。

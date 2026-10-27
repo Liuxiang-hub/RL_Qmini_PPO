@@ -533,7 +533,7 @@ class LeggedRobotEnv:
             [torch.Tensor]: Torques sent to the simulation
         """
         error = joint_action - self.joint_pos
-        torques = self.p_gains * self.p_gains_rand * error + self.d_gains - self.d_gains_rand * self.joint_vel + self.joint_tor_offset - 3.5 * torch.sign(self.joint_vel) * self.joint_vel_sign
+        torques = self.p_gains * self.p_gains_rand * error - self.d_gains * self.d_gains_rand * self.joint_vel + self.joint_tor_offset - 3.5 * torch.sign(self.joint_vel) * self.joint_vel_sign
         return torch.clip(torques, - self.torque_limits, self.torque_limits).view(self.torques.shape)
 
     # ------------- Reset --------------
