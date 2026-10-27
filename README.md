@@ -91,22 +91,17 @@ ac50da103e32e71122209fbfcbd22b907af246c4f042dca004e3b0459ebc6bbe
 
 <p align="center">
   <a href="docs/videos/qmini-final-real-robot.mp4?raw=1">
-    <img src="docs/images/qmini-final-robot.jpg" width="520" alt="Qmini 最终真机效果，点击播放视频" />
+    <img src="docs/images/qmini-final-real-robot.gif" width="720" alt="Qmini 最终真机动态效果" />
   </a>
 </p>
 
-<p align="center"><strong>点击上图播放最终真机视频，或直接打开 <a href="docs/videos/qmini-final-real-robot.mp4?raw=1">MP4 文件</a>。</strong></p>
+<p align="center"><strong>上图为最终真机视频的动态预览；点击动态图或<a href="docs/videos/qmini-final-real-robot.mp4?raw=1">此处</a>播放带声音的原始 MP4。</strong></p>
 
-<table>
-  <tr>
-    <td align="center"><img src="docs/images/qmini-final-robot.jpg" width="300" alt="Qmini 最终实物" /></td>
-    <td align="center"><img src="docs/images/qmini-final-mobile-control.jpg" width="300" alt="Qmini 手机控制端最终效果" /></td>
-  </tr>
-  <tr>
-    <td align="center">最终真机平台</td>
-    <td align="center">手机桌面入口与网页控制台</td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/images/qmini-final-mobile-control.jpg" width="420" alt="Qmini 手机桌面入口与网页控制台" />
+  <br />
+  <sub>手机桌面入口与网页控制台</sub>
+</p>
 
 #### 历史对照：官方策略初次部署
 
